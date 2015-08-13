@@ -1,0 +1,7 @@
+include *.in
+include *.txt
+include *.md
+recursive-include pyvct  *.pyd
+recursive-include cython *.pyx
+recursive-include cython *.cpp
+
