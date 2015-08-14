@@ -8,7 +8,7 @@ import os
 from abaqus import session
 from abaqusConstants import ELEMENT_NODAL
 from cythonMods import createElementMap
-import elemTypes as et
+import elementTypes as et
 import copy
 from odbAccess import OdbMeshElementType
 import numpy as np
@@ -249,13 +249,11 @@ def createVirtualCT(odbName,bRegionSetName,BMDfoname,showImplant,iRegionSetName,
         return
     
     # Process inputs    
-    resGrid           = float(resGrid)
-    stepList          = [int(s) for s in stepList.replace(',',' ').split()]
+    resGrid   = float(resGrid)
+    stepList  = [int(s) for s in stepList.replace(',',' ').split()]
         
     # Set variables
-    #dx,dy,dz  = (resGrid,)*3
-    #dx,dy,dz  = 0.5,0.5,2.0
-    resGrid   = 256
+    NX,NY     = 256,256
     sliceDist = 5.0
     iDensity /= 1000.    
     odb       = session.odbs[odbName]
@@ -274,31 +272,22 @@ def createVirtualCT(odbName,bRegionSetName,BMDfoname,showImplant,iRegionSetName,
     else:
         bbLow,bbUpp = bBBox
         
-    border    = 0.05*(bbUpp-bbLow)
-    bbLow     = bbLow - border
-    bbUpp     = bbUpp + border
-    bBBox     = np.array([bbLow,bbUpp])
-    bbCentre  = bBBox.mean(axis=0)
-    bbSides   = bbUpp - bbLow
-    lx,ly,lz  = bbSides
-    largeSide = np.max([lx,ly])
-    lx,ly     = largeSide,largeSide
-    x0,y0,z0  = bbCentre-0.5*np.array([lx,ly,lz])
-    xN,yN,zN  = bbCentre+0.5*np.array([lx,ly,lz])
+    # Define extents of CT stack
+    bbox        = np.array([bbLow,bbUpp])
+    bbCentre    = bbox.mean(axis=0)
+    bbSides     = 1.05*(bbUpp - bbLow)
+    bbSides[:2] = np.max(bbSides[:2])
+    bbLow       = bbCentre-0.5*bbSides
+    bbUpp       = bbCentre+0.5*bbSides
+    lx,ly,lz    = bbUpp - bbLow
+    x0,y0,z0    = bbLow
+    xN,yN,zN    = bbUpp
     
     # Generate CT grid
-    NX = resGrid
-    x  = np.linspace(x0,xN,NX)
-    NY = resGrid
-    y  = np.linspace(y0,yN,NY)
     NZ = int(np.ceil(lz/sliceDist+1))
-    z  = np.linspace(z0,zN,NZ) 
-    
-    print NX, NY, NZ
-    print lx,ly,lz
-    print x0,xN
-    print y0,yN
-    print z0,zN
+    x  = np.linspace(x0,xN,NX)
+    y  = np.linspace(y0,yN,NY)
+    z  = np.linspace(z0,zN,NZ)
         
     # Create element map for the implant, map to 3D space array and then project onto 3 planes 
     if showImplant: 
@@ -336,12 +325,10 @@ def createVirtualCT(odbName,bRegionSetName,BMDfoname,showImplant,iRegionSetName,
             bElementMap['r'][indx]    = emap['r'][indx]
     
     # Interpolate HU values from tet mesh onto grid using appropriate tet shape function
-    
     # Get frame
     stepId   = stepList[-1]               
     stepName = "Step-%i" % (stepId)
     frame    = odb.steps[stepName].frames[-1]
-
     # Get BMD data for bRegion in frame
     print 'Getting BMDvalues'
     # Initialise BMDvalues 
@@ -422,10 +409,12 @@ def createVirtualCT(odbName,bRegionSetName,BMDfoname,showImplant,iRegionSetName,
     # Create a new sub-directory to keep CT slice files
     newSubDirName = 'pyCT'
     newSubDirPath =  os.path.join(os.getcwd(),newSubDirName)
+    
+    if os.path.isdir(newSubDirPath):
+        for i in range(100):
+            newSubDirPath = os.path.join(os.getcwd(),newSubDirName+'_%d'%(i+1))
+            if not os.path.isdir(newSubDirPath): break
     os.mkdir(newSubDirPath)
-    if not os.path.isdir(newSubDirPath):
-        print 'Error: Sub-directory %s could not be created' % newSubDirPath
-        return
     # Assume stack direction is z-direction. Need to reorder voxel array
     # Note: The array ds.PixelArray is indexed by [row,col], which is equivalent to [yi,xi]. Also,
     # because we are adding to CTvals by z slice, then the resulting index of CTvals is [zi,yi,xi].
@@ -437,6 +426,7 @@ def createVirtualCT(odbName,bRegionSetName,BMDfoname,showImplant,iRegionSetName,
     psy = ly/NY
     metaData = {}
     metaData['PixelSpacing'] = ['%.3f' % v for v in (psx,psy)]
+    # Write CT slices: One per z-index
     for s in range(voxels.shape[0]):
         sn = ('%5d.dcm' % (s+1)).replace(' ','0')
         fn = os.path.join(newSubDirPath,sn)
@@ -459,14 +449,14 @@ def writeCTslice(pixel_array,filename,metaData):
     file_meta.MediaStorageSOPInstanceUID = ''
     file_meta.ImplementationClassUID =     ''
     ds = FileDataset(filename,{},file_meta = file_meta,preamble="\0"*128)
-    ds.SamplesPerPixel = 1                           # 1 for grey scale, 4 for RGBA
-    ds.PixelRepresentation = 0                       # 0 for unsigned, 1 for signed
-    ds.BitsAllocated = 16                            # 16-bit grey-scale voxel values
-    ds.PhotometricInterpretation = 'MONOCHROME2'    # 0 is black
-    ds.Rows    = pixel_array.shape[0]
-    ds.Columns = pixel_array.shape[1]
-    ds.ImagePositionPatient = metaData['ImagePositionPatient']
-    ds.PixelSpacing         = metaData['PixelSpacing']
+    ds.BitsAllocated       = 16                       # 16-bit grey-scale voxel values
+    ds.SamplesPerPixel     =  1                       # 1 for grey scale, 4 for RGBA
+    ds.PixelRepresentation =  0                       # 0 for unsigned, 1 for signed
+    ds.PhotometricInterpretation = 'MONOCHROME2'      # 0 is black
+    ds.ImagePositionPatient      = metaData['ImagePositionPatient']
+    ds.Columns       = pixel_array.shape[0]
+    ds.Rows          = pixel_array.shape[1]    
+    ds.PixelSpacing  = metaData['PixelSpacing']
     if pixel_array.dtype != np.uint16:
         pixel_array = pixel_array.astype(np.uint16)
     ds.PixelData = pixel_array.tostring()
