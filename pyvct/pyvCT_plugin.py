@@ -6,7 +6,7 @@
 
 from abaqusGui import *
 from abaqusConstants import ALL, CARTESIAN, SCALAR, INTEGRATION_POINT, CENTROID, ELEMENT_NODAL
-from version import version as __version__
+from pyvCT_version import version as __version__
 # Required to ensure the CSYS list is up to date
 from kernelAccess import session  
 
@@ -122,7 +122,7 @@ class PyvCT_plugin(AFXForm):
         self.getScalarList()
         # Create dialog box
         import pyvCTDB
-        return pyvXCTDB.PyvCTDB(self)
+        return pyvCTDB.PyvCTDB(self)
 
     def doCustomChecks(self):
         """Define empty class function doCustomChecks to check user inputs"""

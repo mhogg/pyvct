@@ -5,6 +5,6 @@
 # This file is part of pyvXRAY - See LICENSE.txt for information on usage and redistribution
 
 # Version and date
-import version
+import pyvCT_version as version
 __version__     = version.version
 __releasedate__ = version.releasedate
