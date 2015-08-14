@@ -76,19 +76,30 @@ class PyvCTDB(AFXDataDialog):
         GroupBox_4 = FXGroupBox(p=TabItem_2, text='Required inputs', opts=FRAME_GROOVE|LAYOUT_FILL_X|LAYOUT_FILL_Y)
         VAligner_4 = AFXVerticalAligner(p=GroupBox_4, opts=0, x=0, y=0, w=0, h=0, pl=0, pr=0, pt=10, pb=10)
         
-        AFXTextField(p=VAligner_4, ncols=26, labelText='Step list:', tgt=form.stepListKw, sel=0, pt=5, pb=5)
-        self.popStepListComboBox()        
+        self.ComboBox_7 = AFXComboBox(p=VAligner_4, ncols=24, nvis=1, text='Output Step:', tgt=form.stepNumberKw, sel=0, pt=5, pb=5)
+        self.popStepListComboBox()      
+        self.ComboBox_7.setMaxVisible(min(5,len(self.form.stepList)))
         
         self.ComboBox_5 = AFXComboBox(p=VAligner_4, ncols=24, nvis=1, text='Coordinate system:', tgt=form.csysNameKw, sel=0, pt=5, pb=5)
         self.popCsysListComboBox()        
                 
-        AFXTextField(p=VAligner_4, ncols=26, labelText='%-30s'%'Mapping resolution (mm):', tgt=form.resGridKw, sel=0, pt=5, pb=5)
+        ComboBox_6 = AFXComboBox(p=VAligner_4, ncols=24, nvis=1, text='Slice resolution (pixels)', tgt=form.sliceResolutionKw, sel=0, pt=5, pb=5)
+        for resol in form.sliceRes:
+            ComboBox_6.appendItem(text=resol)
+        ComboBox_6.setMaxVisible(2)
+        
+        AFXTextField(p=VAligner_4, ncols=26, labelText='%-30s'%'CT slice spacing (mm):', tgt=form.sliceSpacingKw, sel=0, pt=5, pb=5)
+        
+        AFXTextField(p=VAligner_4, ncols=26, labelText='%-30s'%'Output sub-directory:', tgt=form.subDirNameKw, sel=0, pt=5, pb=5)
 
+
+        """
         # X-ray settings Tab
         FXTabItem(p=TabBook, text='X-ray settings', ic=None, opts=TAB_TOP_NORMAL, x=0, y=0, w=0, h=0, pl=6, pr=6, pt=DEFAULT_PAD, pb=DEFAULT_PAD)
         TabItem_3 = FXVerticalFrame(p=TabBook, opts=FRAME_RAISED|FRAME_THICK|LAYOUT_FILL_X,
                                     x=0, y=0, w=0, h=0, pl=DEFAULT_SPACING, pr=DEFAULT_SPACING,
                                     pt=DEFAULT_SPACING, pb=DEFAULT_SPACING, hs=DEFAULT_SPACING, vs=DEFAULT_SPACING)
+                                    
         GroupBox_5 = FXGroupBox(p=TabItem_3, text='Settings', opts=FRAME_GROOVE|LAYOUT_FILL_X|LAYOUT_FILL_Y)
         VAligner_5 = AFXVerticalAligner(p=GroupBox_5, opts=0, x=0, y=0, w=0, h=0, pl=0, pr=0, pt=10, pb=0)
         
@@ -104,6 +115,7 @@ class PyvCTDB(AFXDataDialog):
         FXCheckButton(p=GroupBox_5, text='Smooth images', tgt=form.smoothKw, sel=0, pt=10, pb=5)
 
         FXCheckButton(p=GroupBox_5, text='Manual scaling of images', tgt=form.manualScalingKw, sel=0, pt=10, pb=5)
+        """
         
     def populateElementListComboBox(self):
         """Populate comboBox containing element sets for bone"""
@@ -130,7 +142,12 @@ class PyvCTDB(AFXDataDialog):
         self.form.iSetNameKw.setValue(self.form.elementSets[0]) 
         
     def popStepListComboBox(self):
-        self.form.stepListKw.setValue(', '.join(self.form.stepList))
+        """Populate comboBox containing odb steps"""    
+        if len(self.form.stepList)==0: return
+        self.ComboBox_7.clearItems()
+        for s in self.form.stepList:
+            self.ComboBox_7.appendItem(s)
+        self.form.stepNumberKw.setValue(self.form.stepList[-1])
     
     def popCsysListComboBox(self):
         self.ComboBox_5.clearItems()

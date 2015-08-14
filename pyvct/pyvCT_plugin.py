@@ -24,7 +24,7 @@ class PyvCT_plugin(AFXForm):
         self.stepList     = None
         self.elementSets  = None
         self.scalarList   = None
-        self.imageFormats = ['bmp','jpeg','png']
+        self.sliceRes     = ['256 x 256', '512 x 512']
         self.suppLocs     = [INTEGRATION_POINT, CENTROID, ELEMENT_NODAL]
         
         # Keyword definitions
@@ -35,14 +35,15 @@ class PyvCT_plugin(AFXForm):
         self.showImplantKw       = AFXBoolKeyword(self.cmd,   'showImplant', AFXBoolKeyword.TRUE_FALSE, True, False)
         self.iSetNameKw          = AFXStringKeyword(self.cmd, 'iRegionSetName', True, '')
         self.iDensityKw          = AFXFloatKeyword(self.cmd,  'iDensity', True, 4500)
-        self.stepListKw          = AFXStringKeyword(self.cmd, 'stepList', True, '')
-        self.csysNameKw          = AFXStringKeyword(self.cmd, 'csysName', True, '')
-        self.resGridKw           = AFXFloatKeyword(self.cmd,  'resGrid', True, 2)
-        self.imageNameBaseKw     = AFXStringKeyword(self.cmd, 'imageNameBase', True, 'vct')
-        self.preferredXraySizeKw = AFXIntKeyword(self.cmd,    'preferredXraySize', True, 800)
-        self.imageFormatKw       = AFXStringKeyword(self.cmd, 'imageFormat', True, self.imageFormats[-1])
-        self.smoothKw            = AFXBoolKeyword(self.cmd,   'smooth', AFXBoolKeyword.TRUE_FALSE, True, True)
-        self.manualScalingKw     = AFXBoolKeyword(self.cmd,   'manualImageScaling', AFXBoolKeyword.TRUE_FALSE, True, False)
+        self.stepNumberKw        = AFXStringKeyword(self.cmd, 'stepNumber', True, '')
+        self.csysNameKw          = AFXStringKeyword(self.cmd, 'csysName', True, '')        
+        self.sliceResolutionKw   = AFXStringKeyword(self.cmd, 'sliceResolution', True, self.sliceRes[0])
+        self.sliceSpacingKw      = AFXFloatKeyword(self.cmd,  'sliceSpacing', True, 2.0)
+        self.subDirNameKw        = AFXStringKeyword(self.cmd, 'newSubDirName', True, 'pyvCT')
+        #self.preferredXraySizeKw = AFXIntKeyword(self.cmd,    'preferredXraySize', True, 800)
+        #self.imageFormatKw       = AFXStringKeyword(self.cmd, 'imageFormat', True, self.imageFormats[-1])
+        #self.smoothKw            = AFXBoolKeyword(self.cmd,   'smooth', AFXBoolKeyword.TRUE_FALSE, True, True)
+        #self.manualScalingKw     = AFXBoolKeyword(self.cmd,   'manualImageScaling', AFXBoolKeyword.TRUE_FALSE, True, False)
                    
     def getOdbList(self):
         """Get a list of all available odbs in session"""
@@ -154,10 +155,10 @@ class PyvCT_plugin(AFXForm):
                 return False               
             if iDensity<0:
                 showAFXErrorDialog(self.getCurrentDialog(), 'Error: Implant density must be greater than 0')
-                return False              
-
+                return False
+                
         # Check that values in stepList are valid
-        stepList = self.stepListKw.getValue()
+        stepList = self.stepNumberKw.getValue()
         try: 
             stepList = [int(s) for s in stepList.replace(',',' ').split()]
         except: 
@@ -179,6 +180,7 @@ class PyvCT_plugin(AFXForm):
                 showAFXErrorDialog(self.getCurrentDialog(), 'Error: Density variable %s is not available in Step number %i' % (BMDfoname,stepNumber))
                 return False                 
     
+        """
         # Check mapping resolution, resGrid
         resGrid = self.resGridKw.getValue()
         try: resGrid = float(resGrid)
@@ -196,6 +198,7 @@ class PyvCT_plugin(AFXForm):
         if preferredXraySize < minXraySize:
             showAFXErrorDialog(self.getCurrentDialog(), 'Error: Minimum virtual x-ray image size is %i pixels' % minXraySize)
             return False   
+        """
                 
         # Check for Abaqus version >= 6.11 
         majorNumber, minorNumber, updateNumber = getAFXApp().getVersionNumbers()

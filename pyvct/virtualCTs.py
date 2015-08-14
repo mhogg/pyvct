@@ -235,8 +235,7 @@ def checkDependencies():
 # ~~~~~~~~~~
 
 def createVirtualCT(odbName,bRegionSetName,BMDfoname,showImplant,iRegionSetName,
-                    iDensity,stepList,csysName,resGrid,imageNameBase,preferredXraySize,
-                    imageFormat,smooth=False,manualImageScaling=False):
+                    iDensity,stepNumber,csysName,sliceResolution,sliceSpacing,newSubDirName):
     """Creates a virtual CT stack from an ABAQUS odb file. The odb file should contain \n""" + \
     """a step with a fieldoutput variable representing bone mineral density (BMD)"""
         
@@ -248,13 +247,13 @@ def createVirtualCT(odbName,bRegionSetName,BMDfoname,showImplant,iRegionSetName,
         print 'Error: Virtual CT not created\n'
         return
     
-    # Process inputs    
-    resGrid   = float(resGrid)
-    stepList  = [int(s) for s in stepList.replace(',',' ').split()]
+    # Process inputs
+    sliceResolutions = {'256 x 256':(256,256), '512 x 512':(512,512)} 
+    stepNumber       = int(stepNumber)
+    sliceSpacing     = float(sliceSpacing)
         
     # Set variables
-    NX,NY     = 256,256
-    sliceDist = 5.0
+    NX,NY     = sliceResolutions[sliceResolution]   
     iDensity /= 1000.    
     odb       = session.odbs[odbName]
     ec        = dict([(ename,eclass()) for ename,eclass in et.seTypes.items()])
@@ -284,7 +283,7 @@ def createVirtualCT(odbName,bRegionSetName,BMDfoname,showImplant,iRegionSetName,
     xN,yN,zN    = bbUpp
     
     # Generate CT grid
-    NZ = int(np.ceil(lz/sliceDist+1))
+    NZ = int(np.ceil(lz/sliceSpacing+1))
     x  = np.linspace(x0,xN,NX)
     y  = np.linspace(y0,yN,NY)
     z  = np.linspace(z0,zN,NZ)
@@ -325,9 +324,8 @@ def createVirtualCT(odbName,bRegionSetName,BMDfoname,showImplant,iRegionSetName,
             bElementMap['r'][indx]    = emap['r'][indx]
     
     # Interpolate HU values from tet mesh onto grid using appropriate tet shape function
-    # Get frame
-    stepId   = stepList[-1]               
-    stepName = "Step-%i" % (stepId)
+    # Get frame            
+    stepName = "Step-%i" % (stepNumber)
     frame    = odb.steps[stepName].frames[-1]
     # Get BMD data for bRegion in frame
     print 'Getting BMDvalues'
@@ -407,7 +405,6 @@ def createVirtualCT(odbName,bRegionSetName,BMDfoname,showImplant,iRegionSetName,
     # Write CT slices to new directory
     print 'Writing CT slice files'
     # Create a new sub-directory to keep CT slice files
-    newSubDirName = 'pyCT'
     newSubDirPath =  os.path.join(os.getcwd(),newSubDirName)
     
     if os.path.isdir(newSubDirPath):
