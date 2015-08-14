@@ -251,10 +251,12 @@ def createVirtualCT(odbName,bRegionSetName,BMDfoname,showImplant,iRegionSetName,
     # Process inputs    
     resGrid           = float(resGrid)
     stepList          = [int(s) for s in stepList.replace(',',' ').split()]
-    preferredXraySize = int(preferredXraySize)
         
     # Set variables
-    dx,dy,dz  = (resGrid,)*3
+    #dx,dy,dz  = (resGrid,)*3
+    #dx,dy,dz  = 0.5,0.5,2.0
+    resGrid   = 256
+    sliceDist = 5.0
     iDensity /= 1000.    
     odb       = session.odbs[odbName]
     ec        = dict([(ename,eclass()) for ename,eclass in et.seTypes.items()])
@@ -271,22 +273,32 @@ def createVirtualCT(odbName,bRegionSetName,BMDfoname,showImplant,iRegionSetName,
         bbUpp = np.max((bBBox[1],iBBox[1]),axis=0)
     else:
         bbLow,bbUpp = bBBox
-       
-    border   = 0.05*(bbUpp-bbLow)
-    bbLow    = bbLow - border
-    bbUpp    = bbUpp + border
-    bbSides  = bbUpp - bbLow
-    x0,y0,z0 = bbLow
-    xN,yN,zN = bbUpp
-    lx,ly,lz = bbSides
-
+        
+    border    = 0.05*(bbUpp-bbLow)
+    bbLow     = bbLow - border
+    bbUpp     = bbUpp + border
+    bBBox     = np.array([bbLow,bbUpp])
+    bbCentre  = bBBox.mean(axis=0)
+    bbSides   = bbUpp - bbLow
+    lx,ly,lz  = bbSides
+    largeSide = np.max([lx,ly])
+    lx,ly     = largeSide,largeSide
+    x0,y0,z0  = bbCentre-0.5*np.array([lx,ly,lz])
+    xN,yN,zN  = bbCentre+0.5*np.array([lx,ly,lz])
+    
     # Generate CT grid
-    NX = int(np.ceil(lx/dx+1))
+    NX = resGrid
     x  = np.linspace(x0,xN,NX)
-    NY = int(np.ceil(ly/dy+1))
+    NY = resGrid
     y  = np.linspace(y0,yN,NY)
-    NZ = int(np.ceil(lz/dz+1))
-    z  = np.linspace(z0,zN,NZ)  
+    NZ = int(np.ceil(lz/sliceDist+1))
+    z  = np.linspace(z0,zN,NZ) 
+    
+    print NX, NY, NZ
+    print lx,ly,lz
+    print x0,xN
+    print y0,yN
+    print z0,zN
         
     # Create element map for the implant, map to 3D space array and then project onto 3 planes 
     if showImplant: 
@@ -303,7 +315,7 @@ def createVirtualCT(odbName,bRegionSetName,BMDfoname,showImplant,iRegionSetName,
                 iElementMap['h'][indx]    = emap['h'][indx]
                 iElementMap['r'][indx]    = emap['r'][indx]
         # Mask 3D array
-        iMask = np.zeros((NX,NY,NZ),dtype=np.float64)   
+        iMask = np.zeros((NX,NY,NZ),dtype=np.float32)   
         for gpi in xrange(iElementMap.size):
             gridPoint = iElementMap[gpi]
             if gridPoint['cte'] > 0:
@@ -330,15 +342,42 @@ def createVirtualCT(odbName,bRegionSetName,BMDfoname,showImplant,iRegionSetName,
     stepName = "Step-%i" % (stepId)
     frame    = odb.steps[stepName].frames[-1]
 
+    # Get BMD data for bRegion in frame
+    print 'Getting BMDvalues'
     # Initialise BMDvalues 
     BMDvalues = dict([(k,{}) for k in bElemData.keys()])         
     for instName,instData in bElemData.items():
         for etype,eData in instData.items():
             for i in xrange(eData.size): 
-                BMDvalues[instName][eData[i]['label']] = et.seTypes[etype]()
-    
-    # Get BMD data for bRegion in frame
-    print 'Getting BMDvalues'
+                BMDvalues[instName][eData[i]['label']] = et.seTypes[etype]()    
+    # Get list of BMD element_nodal values for each node in bone region
+    BMDfov = frame.fieldOutputs[BMDfoname].getSubset(region=bRegion, position=ELEMENT_NODAL).values
+    BMDnv  = {}
+    for i in xrange(len(BMDfov)):
+        val = BMDfov[i]            
+        instanceName = val.instance.name
+        elemLabel    = val.elementLabel        
+        nodeLabel    = val.nodeLabel
+        if not BMDnv.has_key(instanceName): BMDnv[instanceName] = {}
+        if not BMDnv[instanceName].has_key(nodeLabel): BMDnv[instanceName][nodeLabel] = []
+        BMDnv[instanceName][nodeLabel].append(val.data)
+    # Average BMD element_nodal values
+    for instName in BMDnv.keys():
+        for nl in BMDnv[instName].keys():
+            BMDnv[instName][nl] = np.mean(BMDnv[instName][nl])
+    # Add nodal BMD values to BMDvalues       
+    for instName in bElemData.keys():
+        for etype in bElemData[instName].keys():
+            eData = bElemData[instName][etype]
+            for i in xrange(eData.size):             
+                el = eData[i]['label']
+                nc = eData[i]['econn']
+                for indx in range(nc.size):
+                    nl  = nc[indx]
+                    val = BMDnv[instName][nl]
+                    BMDvalues[instName][el].setNodalValueByIndex(indx,val)
+                
+    """
     BMDfov = frame.fieldOutputs[BMDfoname].getSubset(region=bRegion, position=ELEMENT_NODAL).values
     cel = 0
     for i in xrange(len(BMDfov)):
@@ -351,10 +390,11 @@ def createVirtualCT(odbName,bRegionSetName,BMDfoname,showImplant,iRegionSetName,
         else: 
             indx+=1
         BMDvalues[instanceName][elementLabel].setNodalValueByIndex(indx,val.data)
+    """
 
     # Perform the interpolation from elementMap to 3D space array
     print 'Mapping BMD values'
-    mappedBMD = np.zeros((NX,NY,NZ),dtype=np.float64)    
+    mappedBMD = np.zeros((NX,NY,NZ),dtype=np.float32)    
     for gpi in xrange(bElementMap.size):
         gridPoint = bElementMap[gpi]
         instName  = gridPoint['inst'] 
@@ -372,7 +412,7 @@ def createVirtualCT(odbName,bRegionSetName,BMDfoname,showImplant,iRegionSetName,
     vmin,vmax = [voxels.min(),voxels.max()]
         
     # Scale voxel values to maximum range
-    numbits = 16
+    numbits = 8
     low,upp = 0, 2**numbits-1
     voxels  = low + (voxels-vmin)/(vmax-vmin)*upp
     voxels  = np.asarray(voxels,dtype=np.uint16)
@@ -390,16 +430,17 @@ def createVirtualCT(odbName,bRegionSetName,BMDfoname,showImplant,iRegionSetName,
     # Note: The array ds.PixelArray is indexed by [row,col], which is equivalent to [yi,xi]. Also,
     # because we are adding to CTvals by z slice, then the resulting index of CTvals is [zi,yi,xi].
     # Correct this to more typical index [xi,yi,zi] by swapping xi and zi e.g. zi,yi,xi -> xi,yi,zi
-    voxels = voxels.swapaxes(2,0)
+    voxels = voxels.swapaxes(0,2)
+    voxels = voxels[:,::-1,:]
     # Setup basic metadata
-    psx = lx/(NX-1)
-    psy = ly/(NY-1)
+    psx = lx/NX
+    psy = ly/NY
     metaData = {}
     metaData['PixelSpacing'] = ['%.3f' % v for v in (psx,psy)]
     for s in range(voxels.shape[0]):
         sn = ('%5d.dcm' % (s+1)).replace(' ','0')
         fn = os.path.join(newSubDirPath,sn)
-        metaData['ImagePositionPatient'] = ['%.3f' % v for v in (x[0],y[0],z[s])]
+        metaData['ImagePositionPatient'] = ['%.3f' % v for v in (0.0,0.0,z[s])]
         pixel_array = voxels[s]
         writeCTslice(pixel_array,fn,metaData)
   
@@ -421,11 +462,11 @@ def writeCTslice(pixel_array,filename,metaData):
     ds.SamplesPerPixel = 1                           # 1 for grey scale, 4 for RGBA
     ds.PixelRepresentation = 0                       # 0 for unsigned, 1 for signed
     ds.BitsAllocated = 16                            # 16-bit grey-scale voxel values
-    #ds.PhotometricInterpretation = 'MONOCHROME2'    # 0 is black
+    ds.PhotometricInterpretation = 'MONOCHROME2'    # 0 is black
     ds.Rows    = pixel_array.shape[0]
     ds.Columns = pixel_array.shape[1]
-    #ds.ImagePositionPatient = metaData['ImagePositionPatient']
-    #ds.PixelSpacing         = metaData['PixelSpacing']
+    ds.ImagePositionPatient = metaData['ImagePositionPatient']
+    ds.PixelSpacing         = metaData['PixelSpacing']
     if pixel_array.dtype != np.uint16:
         pixel_array = pixel_array.astype(np.uint16)
     ds.PixelData = pixel_array.tostring()
