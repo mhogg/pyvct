@@ -2,7 +2,7 @@
 
 # Copyright (C) 2015 Michael Hogg
 
-# This file is part of pyvXRAY - See LICENSE.txt for information on usage and redistribution
+# This file is part of pyvCT - See LICENSE.txt for information on usage and redistribution
 
 # cython: profile=False
 # cython: boundscheck=False
