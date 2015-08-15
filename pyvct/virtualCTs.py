@@ -288,28 +288,6 @@ def createVirtualCT(odbName,bRegionSetName,BMDfoname,showImplant,iRegionSetName,
     y  = np.linspace(y0,yN,NY)
     z  = np.linspace(z0,zN,NZ)
         
-    # Create element map for the implant, map to 3D space array and then project onto 3 planes 
-    if showImplant: 
-        # Get a map for each instance and element type. Then combine maps together
-        iElementMap=np.zeros((NX*NY*NZ),dtype=[('inst','|a80'),('cte',int),('g',float),('h',float),('r',float)])
-        for instName in iElemData.keys():
-            for etype in iElemData[instName].keys():
-                edata = iElemData[instName][etype]
-                emap  = createElementMap(iNodeList[instName],edata['label'],edata['econn'],ec[etype].numNodes,x,y,z) 
-                indx  = np.where(emap['cte']>0)
-                iElementMap['inst'][indx] = instName
-                iElementMap['cte'][indx]  = emap['cte'][indx]
-                iElementMap['g'][indx]    = emap['g'][indx]
-                iElementMap['h'][indx]    = emap['h'][indx]
-                iElementMap['r'][indx]    = emap['r'][indx]
-        # Mask 3D array
-        iMask = np.zeros((NX,NY,NZ),dtype=np.float32)   
-        for gpi in xrange(iElementMap.size):
-            gridPoint = iElementMap[gpi]
-            if gridPoint['cte'] > 0:
-                i,j,k = convert1Dto3Dindex(gpi,NX,NY,NZ)
-                iMask[i,j,k] = iDensity
-
     # Create the element map for the bone
     bElementMap=np.zeros((NX*NY*NZ),dtype=[('inst','|a80'),('cte',int),('g',float),('h',float),('r',float)])
     for instName in bElemData.keys():
@@ -379,7 +357,7 @@ def createVirtualCT(odbName,bRegionSetName,BMDfoname,showImplant,iRegionSetName,
 
     # Perform the interpolation from elementMap to 3D space array
     print 'Mapping BMD values'
-    mappedBMD = np.zeros((NX,NY,NZ),dtype=np.float32)    
+    voxels = np.zeros((NX,NY,NZ),dtype=np.float32)    
     for gpi in xrange(bElementMap.size):
         gridPoint = bElementMap[gpi]
         instName  = gridPoint['inst'] 
@@ -387,11 +365,29 @@ def createVirtualCT(odbName,bRegionSetName,BMDfoname,showImplant,iRegionSetName,
         if cte > 0:
             ipc = [gridPoint['g'],gridPoint['h'],gridPoint['r']]
             i,j,k = convert1Dto3Dindex(gpi,NX,NY,NZ)
-            mappedBMD[i,j,k] = BMDvalues[instName][cte].interp(ipc)
+            voxels[i,j,k] = BMDvalues[instName][cte].interp(ipc)
             
-    # Add projected implant to projected bone
-    if not showImplant: voxels = mappedBMD
-    else:               voxels = mappedBMD + iMask
+    # Create element map for the implant, map to 3D space array and then add to voxels array
+    if showImplant: 
+        print 'Adding implant' 
+        # Get a map for each instance and element type. Then combine maps together
+        iElementMap=np.zeros((NX*NY*NZ),dtype=[('inst','|a80'),('cte',int),('g',float),('h',float),('r',float)])
+        for instName in iElemData.keys():
+            for etype in iElemData[instName].keys():
+                edata = iElemData[instName][etype]
+                emap  = createElementMap(iNodeList[instName],edata['label'],edata['econn'],ec[etype].numNodes,x,y,z)
+                indx  = np.where(emap['cte']>0)
+                iElementMap['inst'][indx] = instName
+                iElementMap['cte'][indx]  = emap['cte'][indx]
+                iElementMap['g'][indx]    = emap['g'][indx]
+                iElementMap['h'][indx]    = emap['h'][indx]
+                iElementMap['r'][indx]    = emap['r'][indx]
+        # Add implant to voxels array
+        for gpi in xrange(iElementMap.size):
+            gridPoint = iElementMap[gpi]
+            if gridPoint['cte'] > 0:
+                i,j,k = convert1Dto3Dindex(gpi,NX,NY,NZ)
+                voxels[i,j,k] = iDensity
         
     # Get min/max range of voxel values
     vmin,vmax = [voxels.min(),voxels.max()]
@@ -400,29 +396,31 @@ def createVirtualCT(odbName,bRegionSetName,BMDfoname,showImplant,iRegionSetName,
     numbits = 8
     low,upp = 0, 2**numbits-1
     voxels  = low + (voxels-vmin)/(vmax-vmin)*upp
-    voxels  = np.asarray(voxels,dtype=np.uint16)
+    voxels  = voxels.astype(np.uint16)
     
     # Write CT slices to new directory
     print 'Writing CT slice files'
     # Create a new sub-directory to keep CT slice files
     newSubDirPath =  os.path.join(os.getcwd(),newSubDirName)
-    
     if os.path.isdir(newSubDirPath):
         for i in range(100):
             newSubDirPath = os.path.join(os.getcwd(),newSubDirName+'_%d'%(i+1))
             if not os.path.isdir(newSubDirPath): break
     os.mkdir(newSubDirPath)
+    
     # Assume stack direction is z-direction. Need to reorder voxel array
     # Note: The array ds.PixelArray is indexed by [row,col], which is equivalent to [yi,xi]. Also,
     # because we are adding to CTvals by z slice, then the resulting index of CTvals is [zi,yi,xi].
     # Correct this to more typical index [xi,yi,zi] by swapping xi and zi e.g. zi,yi,xi -> xi,yi,zi
     voxels = voxels.swapaxes(0,2)
     voxels = voxels[:,::-1,:]
+    
     # Setup basic metadata
     psx = lx/NX
     psy = ly/NY
     metaData = {}
     metaData['PixelSpacing'] = ['%.3f' % v for v in (psx,psy)]
+    
     # Write CT slices: One per z-index
     for s in range(voxels.shape[0]):
         sn = ('%5d.dcm' % (s+1)).replace(' ','0')
