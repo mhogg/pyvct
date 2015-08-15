@@ -1,6 +1,9 @@
 \build
+\dist
 \dev
 *.pyd
 *.bat
 *.html
 *.cpp
+*.pyc
+MANIFEST
