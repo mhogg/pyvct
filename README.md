@@ -22,7 +22,7 @@ For building cython modules from source (e.g. if not using releases with pre-bui
 **NOTES:**
 
 1.  ABAQUS is a commerical software package and requires a license from [Simulia](http://www.3ds.com/products-services/simulia/overview/)
-2.  The author of pyvCT are not associated with ABAQUS/Simulia 
+2.  The author of pyvCT is not associated with ABAQUS/Simulia 
 3.  Python and numpy are heavily used by pyvCT. These are built in to ABAQUS. All of the last few releases (v6.11 - v6.13) use Python 2.6.x and numpy 1.4.x
 
 ## Help
