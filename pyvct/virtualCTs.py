@@ -287,26 +287,13 @@ def createVirtualCT(odbName,bRegionSetName,BMDfoname,showImplant,iRegionSetName,
     x  = np.linspace(x0,xN,NX)
     y  = np.linspace(y0,yN,NY)
     z  = np.linspace(z0,zN,NZ)
-        
-    # Create the element map for the bone
-    bElementMap=np.zeros((NX*NY*NZ),dtype=[('inst','|a80'),('cte',int),('g',float),('h',float),('r',float)])
-    for instName in bElemData.keys():
-        for etype in bElemData[instName].keys():
-            edata = bElemData[instName][etype]
-            emap  = createElementMap(bNodeList[instName],edata['label'],edata['econn'],ec[etype].numNodes,x,y,z) 
-            indx  = np.where(emap['cte']>0)
-            bElementMap['inst'][indx] = instName
-            bElementMap['cte'][indx]  = emap['cte'][indx]
-            bElementMap['g'][indx]    = emap['g'][indx]
-            bElementMap['h'][indx]    = emap['h'][indx]
-            bElementMap['r'][indx]    = emap['r'][indx]
     
-    # Interpolate HU values from tet mesh onto grid using appropriate tet shape function
+    # Get BMD values for all elements 
     # Get frame            
     stepName = "Step-%i" % (stepNumber)
     frame    = odb.steps[stepName].frames[-1]
     # Get BMD data for bRegion in frame
-    print 'Getting BMDvalues'
+    print 'Getting BMD values'
     # Initialise BMDvalues 
     BMDvalues = dict([(k,{}) for k in bElemData.keys()])         
     for instName,instData in bElemData.items():
@@ -328,7 +315,7 @@ def createVirtualCT(odbName,bRegionSetName,BMDfoname,showImplant,iRegionSetName,
     for instName in BMDnv.keys():
         for nl in BMDnv[instName].keys():
             BMDnv[instName][nl] = np.mean(BMDnv[instName][nl])
-    # Add nodal BMD values to BMDvalues       
+    # Add nodal BMD values to BMDvalues array 
     for instName in bElemData.keys():
         for etype in bElemData[instName].keys():
             eData = bElemData[instName][etype]
@@ -340,54 +327,34 @@ def createVirtualCT(odbName,bRegionSetName,BMDfoname,showImplant,iRegionSetName,
                     val = BMDnv[instName][nl]
                     BMDvalues[instName][el].setNodalValueByIndex(indx,val)
                 
-    """
-    BMDfov = frame.fieldOutputs[BMDfoname].getSubset(region=bRegion, position=ELEMENT_NODAL).values
-    cel = 0
-    for i in xrange(len(BMDfov)):
-        val = BMDfov[i]            
-        instanceName = val.instance.name
-        elementLabel = val.elementLabel
-        if elementLabel!=cel: 
-            cel=elementLabel
-            indx=0
-        else: 
-            indx+=1
-        BMDvalues[instanceName][elementLabel].setNodalValueByIndex(indx,val.data)
-    """
-
-    # Perform the interpolation from elementMap to 3D space array
+    # Create the element map for the bone and map values over to voxel array
     print 'Mapping BMD values'
-    voxels = np.zeros((NX,NY,NZ),dtype=np.float32)    
-    for gpi in xrange(bElementMap.size):
-        gridPoint = bElementMap[gpi]
-        instName  = gridPoint['inst'] 
-        cte       = gridPoint['cte']
-        if cte > 0:
-            ipc = [gridPoint['g'],gridPoint['h'],gridPoint['r']]
-            i,j,k = convert1Dto3Dindex(gpi,NX,NY,NZ)
-            voxels[i,j,k] = BMDvalues[instName][cte].interp(ipc)
+    voxels = np.zeros((NX,NY,NZ),dtype=np.float32)  
+    for instName in bElemData.keys():
+        for etype in bElemData[instName].keys():
+            edata = bElemData[instName][etype]
+            emap  = createElementMap(bNodeList[instName],edata['label'],edata['econn'],ec[etype].numNodes,x,y,z) 
+            # Where an intersection was found between the grid point and implant, add implant to voxel array
+            indx = np.where(emap['cte']>0)[0]
+            for gpi in indx:
+                cte,g,h,r = emap[gpi]
+                ipc = [g,h,r]
+                i,j,k = convert1Dto3Dindex(gpi,NX,NY,NZ)
+                voxels[i,j,k] = BMDvalues[instName][cte].interp(ipc)
             
     # Create element map for the implant, map to 3D space array and then add to voxels array
-    if showImplant: 
-        print 'Adding implant' 
+    if showImplant:
+        print 'Adding implant'
         # Get a map for each instance and element type. Then combine maps together
-        iElementMap=np.zeros((NX*NY*NZ),dtype=[('inst','|a80'),('cte',int),('g',float),('h',float),('r',float)])
         for instName in iElemData.keys():
             for etype in iElemData[instName].keys():
                 edata = iElemData[instName][etype]
                 emap  = createElementMap(iNodeList[instName],edata['label'],edata['econn'],ec[etype].numNodes,x,y,z)
-                indx  = np.where(emap['cte']>0)
-                iElementMap['inst'][indx] = instName
-                iElementMap['cte'][indx]  = emap['cte'][indx]
-                iElementMap['g'][indx]    = emap['g'][indx]
-                iElementMap['h'][indx]    = emap['h'][indx]
-                iElementMap['r'][indx]    = emap['r'][indx]
-        # Add implant to voxels array
-        for gpi in xrange(iElementMap.size):
-            gridPoint = iElementMap[gpi]
-            if gridPoint['cte'] > 0:
-                i,j,k = convert1Dto3Dindex(gpi,NX,NY,NZ)
-                voxels[i,j,k] = iDensity
+                # Where an intersection was found between the grid point and implant, add implant to voxel array
+                indx = np.where(emap['cte']>0)[0]
+                for gpi in indx:    
+                    i,j,k = convert1Dto3Dindex(gpi,NX,NY,NZ)
+                    voxels[i,j,k] = iDensity
         
     # Get min/max range of voxel values
     vmin,vmax = [voxels.min(),voxels.max()]
@@ -403,7 +370,7 @@ def createVirtualCT(odbName,bRegionSetName,BMDfoname,showImplant,iRegionSetName,
     # Create a new sub-directory to keep CT slice files
     newSubDirPath =  os.path.join(os.getcwd(),newSubDirName)
     if os.path.isdir(newSubDirPath):
-        for i in range(100):
+        for i in range(1000):
             newSubDirPath = os.path.join(os.getcwd(),newSubDirName+'_%d'%(i+1))
             if not os.path.isdir(newSubDirPath): break
     os.mkdir(newSubDirPath)
@@ -416,8 +383,8 @@ def createVirtualCT(odbName,bRegionSetName,BMDfoname,showImplant,iRegionSetName,
     voxels = voxels[:,::-1,:]
     
     # Setup basic metadata
-    psx = lx/NX
-    psy = ly/NY
+    psx = lx/(NX-1)
+    psy = ly/(NY-1)
     metaData = {}
     metaData['PixelSpacing'] = ['%.3f' % v for v in (psx,psy)]
     
